@@ -26,37 +26,16 @@ function normalizeOcr(data,file){
   let store=r.merchantName||textMatch(text,[/([^\n]{1,40}オフィシャルストア)/,/店舗名\s*[:：]?\s*([^\n]+)/,/販売者\s*[:：]?\s*([^\n]+)/]);
   let date=r.transactionDate||'';
   if(!date){let m=text.match(/(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日/);if(m)date=`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`}
-
-  let itemLines=[];
-  let lines=text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
-  const noise=/^(販売価格|価格|単価|数量|品番|商品コード|SKU|小計|商品小計|内消費税|消費税|送料|合計|ご請求額|ご請求合計|注文番号)\b/i;
-
-  // 通販明細: 「販売価格 1,700円」等の直前から商品名を探す
+  let lines=text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),itemLines=[];
+  const isNoise=c=>!c||/^(?:販売価格|価格|単価|数量|品番|商品コード|SKU|小計|商品小計|内消費税|消費税|送料|合計|ご請求額|ご請求合計|注文番号)\b/i.test(c)||/^(?:[¥￥]?\s*)?[0-9,]+\s*円?$/.test(c)||/^SSZS[-_A-Za-z0-9]+$/i.test(c)||/https?:\/\//i.test(c)||/メール|お問い合わせ|マイページ|発送|注文内容/.test(c);
+  const seekName=i=>{for(let j=i-1;j>=Math.max(0,i-12);j--){let c=lines[j].replace(/^[-・●■□]+\s*/,'').trim();if(isNoise(c))continue;if(/^(?:商品名|名称)\s*[:：]/.test(c))c=c.replace(/^(?:商品名|名称)\s*[:：]\s*/,'');if(c.length>=3)return c}return ''};
   for(let i=0;i<lines.length;i++){
     let pm=lines[i].match(/(?:販売価格|価格|単価)\s*[:：]?\s*[¥￥]?\s*([0-9,]+)\s*円?/i);
-    if(!pm)continue;
-    let price=pm[1].replace(/,/g,''),name='';
-    for(let j=i-1;j>=Math.max(0,i-8);j--){
-      let c=lines[j].replace(/^[-・●■□]+\s*/,'').trim();
-      if(!c||noise.test(c)||/^(?:[¥￥]?\s*)?[0-9,]+\s*円?$/.test(c)||/^SSZS[-_A-Za-z0-9]+$/i.test(c))continue;
-      if(/https?:\/\//i.test(c)||/メール|お問い合わせ|マイページ|発送|注文内容/.test(c))continue;
-      if(c.length>=3){name=c;break}
-    }
-    itemLines.push(`${name||'商品'} | ${price}`);
+    if(pm){let name=seekName(i);itemLines.push(`${name||'商品'} | ${pm[1].replace(/,/g,'')}`)}
   }
-
-  // 一般レシート: 「商品名 ¥1,700」「商品名 1,700円」
-  if(itemLines.length===0){
-    for(let line of lines){
-      let m=line.match(/^(.{2,80}?)\s+[¥￥]?\s*([0-9,]+)\s*円?$/);
-      if(m&&!/小計|消費税|送料|合計|請求|お預り|お釣り/.test(m[1]))itemLines.push(`${m[1].trim()} | ${m[2].replace(/,/g,'')}`);
-    }
-  }
-
-  let ship=text.match(/送料[^0-9¥￥]*[¥￥]?\s*([0-9,]+)/);
-  if(ship)itemLines.push(`送料 | ${ship[1].replace(/,/g,'')}`);
+  if(itemLines.length===0){for(let line of lines){let m=line.match(/^(.{2,80}?)\s+[¥￥]?\s*([0-9,]+)\s*円?$/);if(m&&!/小計|消費税|送料|合計|請求|お預り|お釣り/.test(m[1]))itemLines.push(`${m[1].trim()} | ${m[2].replace(/,/g,'')}`)}}
+  let ship=text.match(/送料[^0-9¥￥]*[¥￥]?\s*([0-9,]+)/);if(ship)itemLines.push(`送料 | ${ship[1].replace(/,/g,'')}`);
   itemLines=[...new Set(itemLines)];
-
   return {file:file.name,source:'Azure OCR',status:'OCR解析が完了しました。内容を確認・修正して登録してください。',extracted:true,date:date||K(D),amount,store,item:itemLines.length?`${itemLines.length}件の明細`:'',cat:guessCategory(`${store}\n${text}`),pay:guessPay(text),items:itemLines.join('\n')}
 }
 async function analyzeReceipt(file,onStatus){if(file.size>4*1024*1024)throw new Error('4MB以下のファイルを選んでください');onStatus('ファイルを読み込んでいます…');let base64=await fileToBase64(file);onStatus('Azure OCRで解析しています…');let res=await fetch(OCR_API_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base64,contentType:file.type||'application/octet-stream'})});let data=await res.json().catch(()=>({}));if(!res.ok||!data.success)throw new Error(data.error||`OCRに失敗しました (${res.status})`);return normalizeOcr(data,file)}
