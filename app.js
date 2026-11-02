@@ -27,7 +27,7 @@ function normalizeOcr(data,file){
   let date=r.transactionDate||'';
   if(!date){let m=text.match(/(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日/);if(m)date=`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`}
   let lines=text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),itemLines=[];
-  const isNoise=c=>!c||/^(?:販売価格|価格|単価|数量|品番|商品コード|SKU|小計|商品小計|内消費税|消費税|送料|合計|ご請求額|ご請求合計|注文番号)\b/i.test(c)||/^(?:[¥￥]?\s*)?[0-9,]+\s*円?$/.test(c)||/^SSZS[-_A-Za-z0-9]+$/i.test(c)||/https?:\/\//i.test(c)||/メール|お問い合わせ|マイページ|発送|注文内容/.test(c);
+  const isNoise=c=>!c||/^(?:販売価格|価格|単価|数量|個数|点数|品番|商品コード|SKU|小計|商品小計|内消費税|消費税|送料|合計|ご請求額|ご請求合計|注文番号)(?:\s|[:：]|$)/i.test(c)||/^(?:個数|数量|点数)\s*[:：]?\s*[0-9]+(?:\s*(?:個|点))?$/i.test(c)||/^(?:[¥￥]?\s*)?[0-9,]+\s*円?$/.test(c)||/^SSZS[-_A-Za-z0-9]+$/i.test(c)||/https?:\/\//i.test(c)||/メール|お問い合わせ|マイページ|発送|注文内容/.test(c);
   const seekName=i=>{for(let j=i-1;j>=Math.max(0,i-12);j--){let c=lines[j].replace(/^[-・●■□]+\s*/,'').trim();if(isNoise(c))continue;if(/^(?:商品名|名称)\s*[:：]/.test(c))c=c.replace(/^(?:商品名|名称)\s*[:：]\s*/,'');if(c.length>=3)return c}return ''};
   for(let i=0;i<lines.length;i++){
     let pm=lines[i].match(/(?:販売価格|価格|単価)\s*[:：]?\s*[¥￥]?\s*([0-9,]+)\s*円?/i);
