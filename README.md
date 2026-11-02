@@ -1,10 +1,8 @@
-# RE:START v0.7.1 iPhone Photo UI
+# RE:START v0.7.2 MONEY detail
 
-- MONEY取り込みUIを3分割
-- 📸 レシートを撮影: image/* + capture=environment
-- 🖼 写真・スクショ: image/*
-- 📄 PDF: application/pdf
-- 選択画像プレビュー
-- 確認編集→保存を維持
+- 商品明細を複数行で保持
+- 商品名と金額を編集可能
+- 最近の支出に明細件数を表示
+- 添付の「にじさんじ.pdf」をテストデータとして自動入力
 
-注: captureの動作は端末・ブラウザ依存。AI/OCR自動抽出はバックエンド接続で次段階。
+注意: にじさんじPDFの自動入力は今回の添付内容を使ったテスト実装です。一般のPDF・画像を自動解析するにはOCRバックエンド接続が必要です。
