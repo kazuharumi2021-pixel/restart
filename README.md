@@ -1,11 +1,10 @@
-# RE:START v0.7.0 MONEY
+# RE:START v0.7.1 iPhone Photo UI
 
-- MONEY専用画面
-- 手入力
-- レシート / スクショ / PDF選択
-- AI/OCR確認編集を前提にした入力フォーム
-- 店舗 / 商品 / 金額 / 日付 / カテゴリ / 支払方法
-- 満足度 / 必要性 / 予定外の振り返り
-- 最近の支出 / 月間金額 / カテゴリ集計
+- MONEY取り込みUIを3分割
+- 📸 レシートを撮影: image/* + capture=environment
+- 🖼 写真・スクショ: image/*
+- 📄 PDF: application/pdf
+- 選択画像プレビュー
+- 確認編集→保存を維持
 
-AI/OCR自動抽出は次段階でサーバー側接続を追加。秘密鍵はGitHub Pagesへ置かない。
+注: captureの動作は端末・ブラウザ依存。AI/OCR自動抽出はバックエンド接続で次段階。
