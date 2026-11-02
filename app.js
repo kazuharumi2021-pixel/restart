@@ -20,7 +20,45 @@ function yenNumber(v){if(v==null)return 0;if(typeof v==='number')return Math.rou
 function textMatch(text,patterns){for(let p of patterns){let m=text.match(p);if(m)return (m[1]||'').trim()}return ''}
 function guessCategory(text){if(/にじさんじ|グッズ|マスコット|チャーム|バッジ|ゲーム|ライブ|映画/.test(text))return '趣味';if(/Amazon|楽天|Yahoo|通販/.test(text))return 'ネット通販';if(/病院|薬局|クリニック|医療/.test(text))return '医療・健康';if(/ガソリン|駐車|高速|タイヤ|車/.test(text))return '車';if(/書籍|教材|講座|CATIA|学習/.test(text))return '学習・仕事';if(/スーパー|食品|弁当|飲料|レストラン|カフェ/.test(text))return '食費';return 'その他'}
 function guessPay(text){if(/PayPay/i.test(text))return 'PayPay';if(/現金/.test(text))return '現金';if(/口座|振込|引落/.test(text))return '口座';if(/クレジット|カード|VISA|Mastercard|JCB/i.test(text))return 'クレジット';return 'その他'}
-function normalizeOcr(data,file){let r=data.receipt||{},text=data.rawText||'';let amount=yenNumber(r.total)||yenNumber(textMatch(text,[/ご請求額[^0-9¥￥]*[¥￥]?\s*([0-9,]+)/,/ご請求合計[^0-9¥￥]*[¥￥]?\s*([0-9,]+)/,/合計[^0-9¥￥]*[¥￥]?\s*([0-9,]+)/]));let store=r.merchantName||textMatch(text,[/([^\n]{1,40}オフィシャルストア)/,/店舗名\s*[:：]?\s*([^\n]+)/,/販売者\s*[:：]?\s*([^\n]+)/]);let date=r.transactionDate||'';if(!date){let m=text.match(/(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日/);if(m)date=`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`}let itemLines=[];for(let line of text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean)){let m=line.match(/^(.{2,80}?)\s*[¥￥]\s*([0-9,]+)$/);if(m&&!/小計|消費税|送料|合計|請求/.test(m[1]))itemLines.push(`${m[1]} | ${m[2].replace(/,/g,'')}`)}let ship=text.match(/送料[^0-9¥￥]*[¥￥]?\s*([0-9,]+)/);if(ship)itemLines.push(`送料 | ${ship[1].replace(/,/g,'')}`);return {file:file.name,source:'Azure OCR',status:'OCR解析が完了しました。内容を確認・修正して登録してください。',extracted:true,date:date||K(D),amount,store,item:itemLines.length?`${itemLines.length}件の明細`:'',cat:guessCategory(`${store}\n${text}`),pay:guessPay(text),items:[...new Set(itemLines)].join('\n')}}
+function normalizeOcr(data,file){
+  let r=data.receipt||{},text=data.rawText||'';
+  let amount=yenNumber(r.total)||yenNumber(textMatch(text,[/ご請求額[^0-9¥￥]*[¥￥]?\s*([0-9,]+)/,/ご請求合計[^0-9¥￥]*[¥￥]?\s*([0-9,]+)/,/合計[^0-9¥￥]*[¥￥]?\s*([0-9,]+)/]));
+  let store=r.merchantName||textMatch(text,[/([^\n]{1,40}オフィシャルストア)/,/店舗名\s*[:：]?\s*([^\n]+)/,/販売者\s*[:：]?\s*([^\n]+)/]);
+  let date=r.transactionDate||'';
+  if(!date){let m=text.match(/(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日/);if(m)date=`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`}
+
+  let itemLines=[];
+  let lines=text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  const noise=/^(販売価格|価格|単価|数量|品番|商品コード|SKU|小計|商品小計|内消費税|消費税|送料|合計|ご請求額|ご請求合計|注文番号)\b/i;
+
+  // 通販明細: 「販売価格 1,700円」等の直前から商品名を探す
+  for(let i=0;i<lines.length;i++){
+    let pm=lines[i].match(/(?:販売価格|価格|単価)\s*[:：]?\s*[¥￥]?\s*([0-9,]+)\s*円?/i);
+    if(!pm)continue;
+    let price=pm[1].replace(/,/g,''),name='';
+    for(let j=i-1;j>=Math.max(0,i-8);j--){
+      let c=lines[j].replace(/^[-・●■□]+\s*/,'').trim();
+      if(!c||noise.test(c)||/^(?:[¥￥]?\s*)?[0-9,]+\s*円?$/.test(c)||/^SSZS[-_A-Za-z0-9]+$/i.test(c))continue;
+      if(/https?:\/\//i.test(c)||/メール|お問い合わせ|マイページ|発送|注文内容/.test(c))continue;
+      if(c.length>=3){name=c;break}
+    }
+    itemLines.push(`${name||'商品'} | ${price}`);
+  }
+
+  // 一般レシート: 「商品名 ¥1,700」「商品名 1,700円」
+  if(itemLines.length===0){
+    for(let line of lines){
+      let m=line.match(/^(.{2,80}?)\s+[¥￥]?\s*([0-9,]+)\s*円?$/);
+      if(m&&!/小計|消費税|送料|合計|請求|お預り|お釣り/.test(m[1]))itemLines.push(`${m[1].trim()} | ${m[2].replace(/,/g,'')}`);
+    }
+  }
+
+  let ship=text.match(/送料[^0-9¥￥]*[¥￥]?\s*([0-9,]+)/);
+  if(ship)itemLines.push(`送料 | ${ship[1].replace(/,/g,'')}`);
+  itemLines=[...new Set(itemLines)];
+
+  return {file:file.name,source:'Azure OCR',status:'OCR解析が完了しました。内容を確認・修正して登録してください。',extracted:true,date:date||K(D),amount,store,item:itemLines.length?`${itemLines.length}件の明細`:'',cat:guessCategory(`${store}\n${text}`),pay:guessPay(text),items:itemLines.join('\n')}
+}
 async function analyzeReceipt(file,onStatus){if(file.size>4*1024*1024)throw new Error('4MB以下のファイルを選んでください');onStatus('ファイルを読み込んでいます…');let base64=await fileToBase64(file);onStatus('Azure OCRで解析しています…');let res=await fetch(OCR_API_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base64,contentType:file.type||'application/octet-stream'})});let data=await res.json().catch(()=>({}));if(!res.ok||!data.success)throw new Error(data.error||`OCRに失敗しました (${res.status})`);return normalizeOcr(data,file)}
 function scanMoney(){moneyContent.innerHTML=`<h2>📷 取り込み方法を選ぶ</h2><div class="mobile-pick"><label class="pickbtn">📸<br>レシートを撮影<input id="cameraFile" type="file" accept="image/*" capture="environment"></label><label class="pickbtn">🖼️<br>写真・スクショ<input id="photoFile" type="file" accept="image/*"></label><label class="pickbtn">📄<br>PDF<input id="pdfFile" type="file" accept="application/pdf,.pdf"></label></div><div class="pickhint">4MB以下の画像・PDFに対応。解析後、確認画面で修正して登録します。</div><div id="filePreview"></div><div id="ocrStatus" class="ai-status" style="display:none"></div><button type="button" id="toConfirm" class="complete" style="margin-top:12px" disabled>Azure OCRで読み取る</button>`;moneyDlg.showModal();let chosen=null;function picked(input,label){let f=input.files&&input.files[0];if(!f)return;if(f.size>4*1024*1024){alert('4MB以下のファイルを選んでください');input.value='';return}chosen=f;let html=`<div class="selected-file"><b>${label}</b><div class="file-name">${f.name}</div><small>${(f.size/1024/1024).toFixed(2)} MB</small></div>`;if(f.type.startsWith('image/')){let u=URL.createObjectURL(f);html+=`<img class="preview" src="${u}">`}else html+=`<div class="ai-status">PDFを選択しました。無料F0では先頭2ページが解析対象です。</div>`;filePreview.innerHTML=html;ocrStatus.style.display='none';toConfirm.disabled=false}cameraFile.onchange=()=>picked(cameraFile,'カメラ撮影');photoFile.onchange=()=>picked(photoFile,'写真・スクショ');pdfFile.onchange=()=>picked(pdfFile,'PDF');toConfirm.onclick=async()=>{if(!chosen)return;toConfirm.disabled=true;ocrStatus.style.display='block';try{moneyForm(await analyzeReceipt(chosen,msg=>ocrStatus.textContent=msg))}catch(e){ocrStatus.textContent=`エラー: ${e.message}`;toConfirm.disabled=false}}}
 function calendar(){return `<button class="back" data-go="home">← ホーム</button><section class="card"><h2>${D.getFullYear()}年${D.getMonth()+1}月</h2><p>日別スコアは今後さらに強化します。</p></section>`}function simple(t){return `<section class="card"><h2>${t}</h2><p>順次実装します。</p></section>`}
